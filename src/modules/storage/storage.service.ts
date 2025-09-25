@@ -1,10 +1,11 @@
 import "dotenv/config";
 import { nanoid } from 'nanoid';
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import prisma from '../../../prisma';
-import { createReadStream } from 'node:fs';
 import { Logger } from "@in.pulse-crm/utils";
+
+import LocalStorage from "./storages/local.storage";
+import Storage from "./storages/storage";
 
 interface UploadFileOptions {
     file: Express.Multer.File;
@@ -23,39 +24,38 @@ interface SaveFileOnDatabaseOptions {
 }
 
 const BASE_PATH = process.env["STORAGE_PATH"] || path.join(process.cwd(), 'uploads');
+const LOCAL_STORAGE = new LocalStorage(BASE_PATH);
 Logger.info(`Storage base path: ${BASE_PATH}`);
 
 class StorageService {
-    private constructor() { }
+    constructor(private storage: Storage) { }
 
-    public static async upload({ file, folder }: UploadFileOptions) {
+    public async upload({ file, folder }: UploadFileOptions) {
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
 
-        const uniqueId = await StorageService.getUniqueId();
+        const uniqueId = await this.getUniqueId();
         const filePath = `/${folder}/${year}/${month}/${uniqueId}`;
-        const savePath = path.join(BASE_PATH, filePath);
-
-        await fs.mkdir(savePath, { recursive: true });
-        await fs.writeFile(`${savePath}/${file.originalname}`, file.buffer);
-        const fileData = await StorageService.saveFileMetadataOnDatabase({ id: uniqueId, file, path: savePath, date: now });
+        const savePath = await this.storage.upload({ file, folder: filePath });
+        const fileData = await this.saveFileMetadataOnDatabase({ id: uniqueId, file, path: savePath, date: now });
 
         return fileData;
     }
 
-    public static async download({ fileId }: DownloadFileOptions) {
+    public async download({ fileId }: DownloadFileOptions) {
         const file = await prisma.file.findUnique({
             where: { id: fileId }
         });
         if (!file) throw new Error('File not found');
+
         const filePath = path.join(file.path, file.name);
-        const fileStream = createReadStream(filePath);
+        const fileStream = await this.storage.download({ sourcePath: filePath });
 
         return fileStream;
     }
 
-    private static async getUniqueId(): Promise<string> {
+    private async getUniqueId(): Promise<string> {
         const id = nanoid();
 
         const duplicated = await prisma.file.findUnique({
@@ -65,7 +65,7 @@ class StorageService {
         return duplicated ? await this.getUniqueId() : id;
     }
 
-    private static async saveFileMetadataOnDatabase({ id, file, path, date }: SaveFileOnDatabaseOptions) {
+    private async saveFileMetadataOnDatabase({ id, file, path, date }: SaveFileOnDatabaseOptions) {
         return await prisma.file.create({
             data: {
                 id,
@@ -82,4 +82,4 @@ class StorageService {
     }
 }
 
-export default StorageService;
+export default new StorageService(LOCAL_STORAGE);
