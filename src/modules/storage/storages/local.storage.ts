@@ -31,7 +31,7 @@ class LocalStorage implements Storage {
 
     public async download(options: DownloadFileOptions): Promise<NodeJS.ReadableStream> {
         try {
-            const filePath = path.join(this.basePath, options.sourcePath);
+            const filePath = options.sourcePath;
 
             return createReadStream(filePath);
         } catch (err: unknown) {

@@ -49,8 +49,8 @@ class StorageService {
         });
         if (!file) throw new Error('File not found');
 
-        const filePath = path.join(file.path, file.name);
-        const fileStream = await this.storage.download({ sourcePath: filePath });
+
+        const fileStream = await this.storage.download({ sourcePath: file.path });
 
         return fileStream;
     }
